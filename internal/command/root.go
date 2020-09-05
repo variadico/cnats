@@ -6,6 +6,7 @@ import (
 	"github.com/variadico/natstk/internal/command/subcmd"
 	"github.com/variadico/natstk/internal/command/statscmd"
 	"github.com/variadico/natstk/internal/command/credscmd"
+	"github.com/variadico/natstk/internal/command/portscmd"
 )
 
 func Root() *cobra.Command {
@@ -18,6 +19,7 @@ func Root() *cobra.Command {
 	cmd.AddCommand(subcmd.Cmd())
 	cmd.AddCommand(statscmd.Cmd())
 	cmd.AddCommand(credscmd.Cmd())
+	cmd.AddCommand(portscmd.Cmd())
 
 	return cmd
 }

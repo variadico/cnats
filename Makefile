@@ -19,7 +19,7 @@ $(warning failed to find app version, using default)
 endif
 
 natstk: $(gosrc) vendor
-	go build github.com/variadico/natstk/cmd/natstk
+	go build -race github.com/variadico/natstk/cmd/natstk
 
 natstk.linuxrelease: $(gosrc) vendor
 	GOOS=linux CGO_ENABLED=0 go build -o $@ -v -ldflags=$(ldflags) github.com/variadico/natstk/cmd/natstk
