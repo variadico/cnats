@@ -302,7 +302,7 @@ func formatCredsOutput(gc *jwt.GenericClaims, token string, kp keyer, opt option
 		return "", err
 	}
 
-	if len(opt.outputFields) == 0 {
+	if !opt.showAll && len(opt.outputFields) == 0 {
 		return string(claims), nil
 	}
 
@@ -325,6 +325,11 @@ func formatCredsOutput(gc *jwt.GenericClaims, token string, kp keyer, opt option
 		"publickey":     string(publicKey),
 		"privatekey":    string(privateKey),
 		"seed":          string(seed),
+	}
+
+	if opt.showAll && len(opt.outputFields) == 0 {
+		opt.outputFields = append(opt.outputFields, "claims", "claimsencoded", "publickey",
+			"privatekey", "seed")
 	}
 
 	var chunks []string
