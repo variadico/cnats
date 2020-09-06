@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"strings"
 
 	"github.com/nats-io/jwt"
 	"github.com/nats-io/nkeys"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type keyer interface {
@@ -26,6 +28,7 @@ type options struct {
 	issuerKeyPair nkeys.KeyPair
 	outputFields  []string
 	showAll       bool
+	bcrypt        bool
 }
 
 func Cmd() *cobra.Command {
@@ -41,7 +44,8 @@ func Cmd() *cobra.Command {
 	cmd.Flags().String("new-account", "", "create new account with name")
 	cmd.Flags().String("new-user", "", "create new user with name")
 	cmd.Flags().StringP("issuer", "i", "", "issuer credentials")
-	cmd.Flags().BoolP("all", "A", false, "show all data fields")
+	cmd.Flags().BoolP("all", "A", false, "show all credential data")
+	cmd.Flags().BoolP("bcrypt", "b", false, "hash stdin with bcrypt")
 	cmd.Flags().StringP("output-fields", "f", "", "comma separated list of fields to include in output")
 
 	return cmd
@@ -75,6 +79,17 @@ func runE(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Print(credsFile)
+	case opt.bcrypt:
+		data, err := ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			return err
+		}
+		s, err := bcryptData(data)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(s)
 	default:
 		creds, err := ioutil.ReadFile(opt.credsFile)
 		if err != nil {
@@ -143,8 +158,14 @@ func getOptions(flags *pflag.FlagSet, args []string) (options, error) {
 		return options{}, err
 	}
 
-	hasNewFlags := flags.Changed("new-operator") || flags.Changed("new-account") || flags.Changed("new-user")
-	if !hasNewFlags && len(args) == 0 {
+	opt.bcrypt, err = flags.GetBool("bcrypt")
+	if err != nil {
+		return options{}, err
+	}
+
+	noCredsFlag := flags.Changed("new-operator") ||
+		flags.Changed("new-account") || flags.Changed("new-user") || flags.Changed("bcrypt")
+	if !noCredsFlag && len(args) == 0 {
 		return options{}, fmt.Errorf("missing credentials file")
 	} else if len(args) > 0 {
 		opt.credsFile = args[0]
@@ -341,4 +362,13 @@ func formatCredsOutput(gc *jwt.GenericClaims, token string, kp keyer, opt option
 	}
 
 	return strings.Join(chunks, "\t"), nil
+}
+
+func bcryptData(bs []byte) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword(bs, 11)
+	if err != nil {
+		return "", err
+	}
+
+	return string(hash), nil
 }
