@@ -1,6 +1,8 @@
 package credscmd
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -25,10 +27,12 @@ type options struct {
 	operatorName  string
 	accountName   string
 	userName      string
-	issuerKeyPair nkeys.KeyPair
+	issuerKeys    nkeys.KeyPair
 	outputFields  []string
 	showAll       bool
 	bcrypt        bool
+	natsClaims    []byte
+	setNATSClaims bool
 }
 
 func Cmd() *cobra.Command {
@@ -43,6 +47,7 @@ func Cmd() *cobra.Command {
 	cmd.Flags().String("new-operator", "", "create operator with name")
 	cmd.Flags().String("new-account", "", "create new account with name")
 	cmd.Flags().String("new-user", "", "create new user with name")
+	cmd.Flags().String("set-nats-claims", "", "set entity nats claims")
 	cmd.Flags().StringP("issuer", "i", "", "issuer credentials")
 	cmd.Flags().BoolP("all", "A", false, "show all credential data")
 	cmd.Flags().BoolP("bcrypt", "b", false, "hash stdin with bcrypt")
@@ -90,13 +95,15 @@ func runE(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Println(s)
-	default:
-		creds, err := ioutil.ReadFile(opt.credsFile)
+	case opt.setNATSClaims:
+		credsFile, err := updateNATSClaims(opt)
 		if err != nil {
 			return err
 		}
 
-		credsOutput, err := readCreds(creds, opt)
+		fmt.Print(credsFile)
+	default:
+		credsOutput, err := readCreds(opt)
 		if err != nil {
 			return err
 		}
@@ -147,7 +154,18 @@ func getOptions(flags *pflag.FlagSet, args []string) (options, error) {
 		if err != nil {
 			return options{}, err
 		}
-		opt.issuerKeyPair, err = jwt.ParseDecoratedNKey(data)
+		opt.issuerKeys, err = jwt.ParseDecoratedNKey(data)
+		if err != nil {
+			return options{}, err
+		}
+	}
+
+	if flags.Changed("set-nats-claims") && flags.Changed("issuer") {
+		data, err := ioutil.ReadFile(issuerCredsFile)
+		if err != nil {
+			return options{}, err
+		}
+		opt.issuerKeys, err = jwt.ParseDecoratedNKey(data)
 		if err != nil {
 			return options{}, err
 		}
@@ -181,6 +199,13 @@ func getOptions(flags *pflag.FlagSet, args []string) (options, error) {
 		}
 	}
 
+	natsClaims, err := flags.GetString("set-nats-claims")
+	if err != nil {
+		return options{}, err
+	}
+	opt.natsClaims = []byte(natsClaims)
+	opt.setNATSClaims = flags.Changed("set-nats-claims")
+
 	return opt, nil
 }
 
@@ -197,7 +222,18 @@ func newOperator(opt options) (string, error) {
 
 	claims := jwt.NewOperatorClaims(publicKey)
 	claims.Name = opt.operatorName
-	// Set claims.operator_service_urls
+
+	if opt.setNATSClaims {
+		r := bytes.NewReader(opt.natsClaims)
+		dec := json.NewDecoder(r)
+		dec.DisallowUnknownFields()
+
+		var natsClaims jwt.Operator
+		if err := dec.Decode(&natsClaims); err != nil {
+			return "", err
+		}
+		claims.Operator = natsClaims
+	}
 
 	ct, err := claims.Encode(keyPair)
 	if err != nil {
@@ -227,7 +263,7 @@ func newAccount(opt options) (string, error) {
 	claims.Name = opt.accountName
 	// Set other claims, claims.nats or something
 
-	ct, err := claims.Encode(opt.issuerKeyPair)
+	ct, err := claims.Encode(opt.issuerKeys)
 	if err != nil {
 		return "", err
 	}
@@ -255,7 +291,7 @@ func newUser(opt options) (string, error) {
 	claims.Name = opt.userName
 	// Set other claims, claims.nats or something
 
-	ct, err := claims.Encode(opt.issuerKeyPair)
+	ct, err := claims.Encode(opt.issuerKeys)
 	if err != nil {
 		return "", err
 	}
@@ -294,15 +330,26 @@ func (kp naKeyPair) Seed() ([]byte, error) {
 	return []byte("N/A"), nil
 }
 
-func readCreds(creds []byte, opt options) (string, error) {
-	configToken, err := jwt.ParseDecoratedJWT(creds)
+func readCreds(opt options) (s string, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to read ncreds: %w", err)
+		}
+	}()
+
+	creds, err := ioutil.ReadFile(opt.credsFile)
 	if err != nil {
 		return "", err
 	}
 
+	configToken, err := jwt.ParseDecoratedJWT(creds)
+	if err != nil {
+		return "", fmt.Errorf("failed to read config token: %w", err)
+	}
+
 	claims, err := jwt.DecodeGeneric(configToken)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to read claims: %w", err)
 	}
 
 	var keys keyer
@@ -371,4 +418,163 @@ func bcryptData(bs []byte) (string, error) {
 	}
 
 	return string(hash), nil
+}
+
+func updateNATSClaims(opt options) (s string, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to set nats claims: %w", err)
+		}
+	}()
+
+	creds, err := ioutil.ReadFile(opt.credsFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to read ncreds file: %w", err)
+	}
+
+	configToken, err := jwt.ParseDecoratedJWT(creds)
+	if err != nil {
+		return "", fmt.Errorf("failed to read config token: %w", err)
+	}
+
+	keys, err := jwt.ParseDecoratedNKey(creds)
+	if err != nil {
+		return "", fmt.Errorf("failed to read nkeys: %w", err)
+	}
+
+	r := bytes.NewReader(opt.natsClaims)
+	dec := json.NewDecoder(r)
+	dec.DisallowUnknownFields()
+
+	entity, err := tokenEntity(configToken)
+	if err != nil {
+		return "", fmt.Errorf("failed to find config token type: %w", err)
+	}
+
+	var credsFile string
+	switch entity {
+	case "operator":
+		credsFile, err = updateNATSClaimsOperator(configToken, keys, dec)
+	case "account":
+		credsFile, err = updateNATSClaimsAccount(configToken, keys, opt.issuerKeys, dec)
+	case "user":
+		credsFile, err = updateNATSClaimsUser(configToken, keys, opt.issuerKeys, dec)
+	default:
+		err = fmt.Errorf("unable to determine config token type")
+	}
+	if err != nil {
+		return "", err
+	}
+
+	return credsFile, nil
+}
+
+func updateNATSClaimsOperator(configToken string, oprKeys nkeys.KeyPair, d *json.Decoder) (string, error) {
+	claims, err := jwt.DecodeOperatorClaims(configToken)
+	if err != nil {
+		return "", err
+	}
+
+	var natsClaims jwt.Operator
+	if err := d.Decode(&natsClaims); err != nil {
+		return "", err
+	}
+	claims.Operator = natsClaims
+
+	ct, err := claims.Encode(oprKeys)
+	if err != nil {
+		return "", err
+	}
+
+	seed, err := oprKeys.Seed()
+	if err != nil {
+		return "", err
+	}
+
+	return formatCredsFile(ct, seed)
+}
+
+func updateNATSClaimsAccount(configToken string, accKeys, oprKeys nkeys.KeyPair, d *json.Decoder) (string, error) {
+	if oprKeys == nil {
+		return "", fmt.Errorf("missing operator issuer ncreds")
+	}
+
+	claims, err := jwt.DecodeAccountClaims(configToken)
+	if err != nil {
+		return "", err
+	}
+
+	var natsClaims jwt.Account
+	if err := d.Decode(&natsClaims); err != nil {
+		return "", err
+	}
+	claims.Account = natsClaims
+
+	ct, err := claims.Encode(oprKeys)
+	if err != nil {
+		return "", err
+	}
+
+	seed, err := accKeys.Seed()
+	if err != nil {
+		return "", err
+	}
+
+	return formatCredsFile(ct, seed)
+}
+
+func updateNATSClaimsUser(configToken string, usrKeys, accKeys nkeys.KeyPair, d *json.Decoder) (string, error) {
+	if accKeys == nil {
+		return "", fmt.Errorf("missing account issuer ncreds")
+	}
+
+	claims, err := jwt.DecodeUserClaims(configToken)
+	if err != nil {
+		return "", err
+	}
+
+	var natsClaims jwt.User
+	if err := d.Decode(&natsClaims); err != nil {
+		return "", err
+	}
+	claims.User = natsClaims
+
+	ct, err := claims.Encode(accKeys)
+	if err != nil {
+		return "", err
+	}
+
+	seed, err := usrKeys.Seed()
+	if err != nil {
+		return "", err
+	}
+
+	return formatCredsFile(ct, seed)
+}
+
+func tokenEntity(configToken string) (string, error) {
+	sps := strings.Split(configToken, ".")
+	if len(sps) < 2 {
+		fmt.Fprintln(os.Stderr, sps)
+		return "", fmt.Errorf("unexpected number of token splits: %d", len(sps))
+	}
+
+
+	data, err := base64.RawStdEncoding.DecodeString(sps[1])
+	if err != nil {
+		return "", err
+	}
+
+	data = bytes.ReplaceAll(data, []byte(" "), []byte(""))
+
+	switch {
+	case bytes.Contains(data, []byte(`"type":"operator"`)):
+		return "operator", nil
+	case bytes.Contains(data, []byte(`"type":"account"`)):
+		return "account", nil
+	case bytes.Contains(data, []byte(`"type":"user"`)):
+		return "user", nil
+	}
+
+	return "", nil
 }
