@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags:
+    - '*'
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Create release draft
+        id: create_release_draft
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        with:
+          tag_name: ${{github.ref}}
+          release_name: ${{github.ref}}
+          draft: true
+          prerelease: false
+      - name: Set tag env var
+        run: echo ::set-env name=GIT_TAG::${GITHUB_REF#refs/*/}
+      - name: Create tarballs
+        run: |
+          make release
+      - name: Upload Linux
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        with:
+          upload_url: ${{steps.create_release_draft.outputs.upload_url}}
+          asset_path: ./release/natstk${{env.GIT_TAG}}.linux-amd64.tar.gz
+          asset_name: natstk${{env.GIT_TAG}}.linux-amd64.tar.gz
+          asset_content_type: application/gzip; charset=binary
