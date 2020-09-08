@@ -77,6 +77,14 @@ func runE(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Check if there are any subscription permission violations.
+	if err := nc.FlushTimeout(1 * time.Second); err != nil {
+		return err
+	}
+	if err := nc.LastError(); err != nil {
+		return err
+	}
+
 	errc := make(chan error)
 	go handleInterrupt(sub, errc)
 	go handleMessages(sub, opt, errc)

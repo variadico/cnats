@@ -60,10 +60,20 @@ func runE(cmd *cobra.Command, args []string) error {
 	defer nc.Close()
 
 	errc := make(chan error)
+
 	go handleInterrupt(nc, errc)
 	go handleMessages(nc, opt, errc)
 
-	return <-errc
+	err = <-errc
+	if err != nil {
+		return err
+	}
+
+	// Check if there are any publish permission violations.
+	if err := nc.FlushTimeout(1 * time.Second); err != nil {
+		return err
+	}
+	return nc.LastError()
 }
 
 func getOptions(flags *pflag.FlagSet, args []string) (opt options, err error) {
@@ -195,7 +205,7 @@ func handleMessages(nc *nats.Conn, opt options, errc chan<- error) {
 				}
 				time.Sleep(sleepDur)
 			}
-		}
+		} // end hz
 
 		errc <- nc.Publish(opt.subject, opt.payload)
 		return
