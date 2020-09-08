@@ -23,6 +23,7 @@ type options struct {
 	count        int
 	credsFile    string
 	waitIncoming bool
+	clearScreen  bool
 
 	subject string
 }
@@ -43,6 +44,7 @@ func Cmd() *cobra.Command {
 	cmd.Flags().StringP("output-fields", "f", "", "comma separated list of fields to include in output")
 	cmd.Flags().IntP("count", "c", 0, "max messages to receive")
 	cmd.Flags().BoolP("wait", "w", false, "wait forever for incoming requests")
+	cmd.Flags().BoolP("clear", "k", false, "clear screen before printing new message")
 
 	return cmd
 }
@@ -158,6 +160,11 @@ func getOptions(flags *pflag.FlagSet, args []string) (opt options, err error) {
 		return options{}, err
 	}
 
+	opt.clearScreen, err = flags.GetBool("clear")
+	if err != nil {
+		return options{}, err
+	}
+
 	return opt, nil
 }
 
@@ -204,6 +211,10 @@ func handleMessages(sub *nats.Subscription, opt options, errc chan<- error) {
 			Subject:   m.Subject,
 			Reply:     m.Reply,
 			Timestamp: time.Now(),
+		}
+
+		if opt.clearScreen {
+			fmt.Print("\033[H\033[J")
 		}
 		fmt.Println(logfmt.Format(d, opt.outputFields))
 
