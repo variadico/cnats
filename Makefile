@@ -21,15 +21,15 @@ endif
 natstk: $(gosrc) vendor
 	go build -race github.com/variadico/natstk/cmd/natstk
 
-natstk.linuxrelease: $(gosrc) vendor
+release/natstk.linuxrelease: $(gosrc) vendor
+	mkdir --parents release
 	GOOS=linux CGO_ENABLED=0 go build -o $@ -v -ldflags=$(ldflags) github.com/variadico/natstk/cmd/natstk
 
 vendor: go.mod go.sum
 	go mod vendor
 
-release/natstk$(appver).linux-amd64.tar.gz: natstk.linuxrelease
-	mkdir --parents release
-	tar czf $@ --transform 's/$</natstk/g' $<
+release/natstk$(appver).linux-amd64.tar.gz: release/natstk.linuxrelease
+	tar czf $@ --transform 's#$<#natstk#g' $<
 
 .PHONY: release
 release: release/natstk$(appver).linux-amd64.tar.gz
@@ -43,4 +43,4 @@ install: natstk
 
 .PHONY: clean
 clean:
-	rm -rf natstk natstk.linuxrelease release
+	rm -rf natstk release
