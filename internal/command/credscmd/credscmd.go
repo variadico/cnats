@@ -47,7 +47,7 @@ func Cmd() *cobra.Command {
 	cmd.Flags().String("new-operator", "", "create operator with name")
 	cmd.Flags().String("new-account", "", "create new account with name")
 	cmd.Flags().String("new-user", "", "create new user with name")
-	cmd.Flags().String("set-nats-claims", "", "set entity nats claims")
+	cmd.Flags().String("set-nats-claims", "", "updating existing entity nats claims")
 	cmd.Flags().StringP("issuer", "i", "", "issuer credentials")
 	cmd.Flags().BoolP("all", "A", false, "show all credential data")
 	cmd.Flags().BoolP("bcrypt", "b", false, "hash stdin with bcrypt")
