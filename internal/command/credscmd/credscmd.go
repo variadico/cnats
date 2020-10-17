@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nats-io/jwt"
+	jwt "github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nkeys"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
