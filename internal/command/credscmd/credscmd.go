@@ -51,7 +51,7 @@ func Cmd() *cobra.Command {
 	cmd.Flags().StringP("issuer", "i", "", "issuer credentials")
 	cmd.Flags().BoolP("all", "A", false, "show all credential data")
 	cmd.Flags().BoolP("bcrypt", "b", false, "hash stdin with bcrypt")
-	cmd.Flags().StringP("output-fields", "f", "", "comma separated list of fields to include in output")
+	cmd.Flags().StringP("output-fields", "f", "", "comma separated list of fields to include in output (fields claims,jwt,publickey,privatekey,seed)")
 
 	return cmd
 }
