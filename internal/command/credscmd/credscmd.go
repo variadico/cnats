@@ -388,15 +388,15 @@ func formatCredsOutput(gc *jwt.GenericClaims, token string, kp keyer, opt option
 	}
 
 	m := map[string]string{
-		"claims":        string(claims),
-		"claimsencoded": string(token),
-		"publickey":     string(publicKey),
-		"privatekey":    string(privateKey),
-		"seed":          string(seed),
+		"claims":     string(claims),
+		"jwt":        string(token),
+		"publickey":  string(publicKey),
+		"privatekey": string(privateKey),
+		"seed":       string(seed),
 	}
 
 	if opt.showAll && len(opt.outputFields) == 0 {
-		opt.outputFields = append(opt.outputFields, "claims", "claimsencoded", "publickey",
+		opt.outputFields = append(opt.outputFields, "claims", "jwt", "publickey",
 			"privatekey", "seed")
 	}
 
@@ -558,7 +558,6 @@ func tokenEntity(configToken string) (string, error) {
 		fmt.Fprintln(os.Stderr, sps)
 		return "", fmt.Errorf("unexpected number of token splits: %d", len(sps))
 	}
-
 
 	data, err := base64.RawStdEncoding.DecodeString(sps[1])
 	if err != nil {
