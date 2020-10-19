@@ -3,7 +3,7 @@ github.com/inconshreveable/mousetrap
 # github.com/nats-io/jwt v1.0.1
 ## explicit
 github.com/nats-io/jwt
-# github.com/nats-io/jwt/v2 v2.0.0-20200918221820-1516fad90b14
+# github.com/nats-io/jwt/v2 v2.0.0-20201015190852-e11ce317263c
 ## explicit
 github.com/nats-io/jwt/v2
 # github.com/nats-io/nats.go v1.10.0
