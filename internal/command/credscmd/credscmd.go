@@ -23,15 +23,17 @@ type keyer interface {
 }
 
 type options struct {
-	credsFile    string
-	operatorName string
-	accountName  string
-	userName     string
-	issuerKeys   nkeys.KeyPair
-	outputFields []string
-	showAll      bool
-	bcrypt       bool
-	setClaims    string
+	credsFile         string
+	operatorName      string
+	accountName       string
+	userName          string
+	issuerKeys        nkeys.KeyPair
+	outputFields      []string
+	showAll           bool
+	bcrypt            bool
+	setClaims         string
+	activationSubject string
+	activationAccount string
 }
 
 func Cmd() *cobra.Command {
@@ -45,6 +47,7 @@ func Cmd() *cobra.Command {
 
 	cmd.Flags().String("new-operator", "", "create operator with name")
 	cmd.Flags().String("new-account", "", "create new account with name")
+	cmd.Flags().String("new-activation", "", "create new activation token <import-subject,account-publickey>")
 	cmd.Flags().String("new-user", "", "create new user with name")
 	cmd.Flags().String("set-claims", "", "updating existing jwt claims")
 	cmd.Flags().StringP("issuer", "i", "", "issuer credentials")
@@ -83,6 +86,13 @@ func runE(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Print(credsFile)
+	case opt.activationSubject != "":
+		atok, err := newActivation(opt.activationSubject, opt.activationAccount, opt.issuerKeys)
+		if err != nil {
+			return err
+		}
+
+		fmt.Print(atok)
 	case opt.bcrypt:
 		data, err := ioutil.ReadAll(os.Stdin)
 		if err != nil {
@@ -140,7 +150,19 @@ func getOptions(flags *pflag.FlagSet, args []string) (options, error) {
 		return options{}, fmt.Errorf("user name cannot be empty")
 	}
 
-	needIssuer := flags.Changed("new-account") || flags.Changed("new-user")
+	act, err := flags.GetString("new-activation")
+	if err != nil {
+		return options{}, err
+	}
+	if sps := strings.Split(act, ","); len(sps) == 2 {
+		opt.activationSubject = sps[0]
+		opt.activationAccount = sps[1]
+	} else if len(sps) == 1 {
+		opt.activationSubject = sps[0]
+	}
+
+	needIssuer := flags.Changed("new-account") || flags.Changed("new-user") ||
+		flags.Changed("new-activation")
 
 	issuerCredsFile, err := flags.GetString("issuer")
 	if err != nil {
@@ -180,8 +202,8 @@ func getOptions(flags *pflag.FlagSet, args []string) (options, error) {
 		return options{}, err
 	}
 
-	noCredsFlag := flags.Changed("new-operator") ||
-		flags.Changed("new-account") || flags.Changed("new-user") || flags.Changed("bcrypt")
+	noCredsFlag := flags.Changed("new-operator") || flags.Changed("new-account") ||
+	flags.Changed("new-user") || flags.Changed("bcrypt") || flags.Changed("new-activation")
 	if !noCredsFlag && len(args) == 0 {
 		return options{}, fmt.Errorf("missing credentials file")
 	} else if len(args) > 0 {
@@ -304,6 +326,23 @@ func newUser(opt options) (string, error) {
 	}
 
 	return formatCredsFile(ct, seed)
+}
+
+func newActivation(importSubject, importAccount string, issuer nkeys.KeyPair) (a string, err error) {
+	claims := jwt.NewActivationClaims(importSubject)
+	claims.Subject = importAccount
+	claims.Name = importSubject
+	claims.Activation.ImportSubject = jwt.Subject(importSubject)
+	claims.Activation.ImportType = jwt.Stream
+
+	tok, err := claims.Encode(issuer)
+	if err != nil {
+		return "", err
+	}
+
+	const begin = "-----BEGIN NATS ACTIVATION JWT-----"
+	const end = "------END NATS ACTIVATION JWT------"
+	return fmt.Sprintf("%s\n%s\n%s\n", begin, tok, end), nil
 }
 
 func formatCredsFile(configToken string, seed []byte) (string, error) {
