@@ -23,16 +23,15 @@ type keyer interface {
 }
 
 type options struct {
-	credsFile     string
-	operatorName  string
-	accountName   string
-	userName      string
-	issuerKeys    nkeys.KeyPair
-	outputFields  []string
-	showAll       bool
-	bcrypt        bool
-	newClaims    []byte
-	setClaims bool
+	credsFile    string
+	operatorName string
+	accountName  string
+	userName     string
+	issuerKeys   nkeys.KeyPair
+	outputFields []string
+	showAll      bool
+	bcrypt       bool
+	setClaims    string
 }
 
 func Cmd() *cobra.Command {
@@ -95,7 +94,7 @@ func runE(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Println(s)
-	case opt.setClaims:
+	case opt.setClaims != "":
 		credsFile, err := updateNATSClaims(opt)
 		if err != nil {
 			return err
@@ -199,12 +198,10 @@ func getOptions(flags *pflag.FlagSet, args []string) (options, error) {
 		}
 	}
 
-	newClaims, err := flags.GetString("set-claims")
+	opt.setClaims, err = flags.GetString("set-claims")
 	if err != nil {
 		return options{}, err
 	}
-	opt.newClaims = []byte(newClaims)
-	opt.setClaims = flags.Changed("set-claims")
 
 	return opt, nil
 }
@@ -223,8 +220,13 @@ func newOperator(opt options) (string, error) {
 	claims := jwt.NewOperatorClaims(publicKey)
 	claims.Name = opt.operatorName
 
-	if opt.setClaims {
-		r := bytes.NewReader(opt.newClaims)
+	if opt.setClaims != "" {
+		data, err := ioutil.ReadFile(opt.setClaims)
+		if err != nil {
+			return "", err
+		}
+
+		r := bytes.NewReader(data)
 		dec := json.NewDecoder(r)
 		dec.DisallowUnknownFields()
 
@@ -442,7 +444,11 @@ func updateNATSClaims(opt options) (s string, err error) {
 		return "", fmt.Errorf("failed to read nkeys: %w", err)
 	}
 
-	r := bytes.NewReader(opt.newClaims)
+	setClaims, err := ioutil.ReadFile(opt.setClaims)
+	if err != nil {
+		return "", fmt.Errorf("failed to read claims file: %w", err)
+	}
+	r := bytes.NewReader(setClaims)
 	dec := json.NewDecoder(r)
 	dec.DisallowUnknownFields()
 
