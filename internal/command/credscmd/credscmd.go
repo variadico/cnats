@@ -31,8 +31,8 @@ type options struct {
 	outputFields  []string
 	showAll       bool
 	bcrypt        bool
-	natsClaims    []byte
-	setNATSClaims bool
+	newClaims    []byte
+	setClaims bool
 }
 
 func Cmd() *cobra.Command {
@@ -47,7 +47,7 @@ func Cmd() *cobra.Command {
 	cmd.Flags().String("new-operator", "", "create operator with name")
 	cmd.Flags().String("new-account", "", "create new account with name")
 	cmd.Flags().String("new-user", "", "create new user with name")
-	cmd.Flags().String("set-nats-claims", "", "updating existing entity nats claims")
+	cmd.Flags().String("set-claims", "", "updating existing jwt claims")
 	cmd.Flags().StringP("issuer", "i", "", "issuer credentials")
 	cmd.Flags().BoolP("all", "A", false, "show all credential data")
 	cmd.Flags().BoolP("bcrypt", "b", false, "hash stdin with bcrypt")
@@ -95,7 +95,7 @@ func runE(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Println(s)
-	case opt.setNATSClaims:
+	case opt.setClaims:
 		credsFile, err := updateNATSClaims(opt)
 		if err != nil {
 			return err
@@ -160,7 +160,7 @@ func getOptions(flags *pflag.FlagSet, args []string) (options, error) {
 		}
 	}
 
-	if flags.Changed("set-nats-claims") && flags.Changed("issuer") {
+	if flags.Changed("set-claims") && flags.Changed("issuer") {
 		data, err := ioutil.ReadFile(issuerCredsFile)
 		if err != nil {
 			return options{}, err
@@ -199,12 +199,12 @@ func getOptions(flags *pflag.FlagSet, args []string) (options, error) {
 		}
 	}
 
-	natsClaims, err := flags.GetString("set-nats-claims")
+	newClaims, err := flags.GetString("set-claims")
 	if err != nil {
 		return options{}, err
 	}
-	opt.natsClaims = []byte(natsClaims)
-	opt.setNATSClaims = flags.Changed("set-nats-claims")
+	opt.newClaims = []byte(newClaims)
+	opt.setClaims = flags.Changed("set-claims")
 
 	return opt, nil
 }
@@ -223,16 +223,16 @@ func newOperator(opt options) (string, error) {
 	claims := jwt.NewOperatorClaims(publicKey)
 	claims.Name = opt.operatorName
 
-	if opt.setNATSClaims {
-		r := bytes.NewReader(opt.natsClaims)
+	if opt.setClaims {
+		r := bytes.NewReader(opt.newClaims)
 		dec := json.NewDecoder(r)
 		dec.DisallowUnknownFields()
 
-		var natsClaims jwt.Operator
-		if err := dec.Decode(&natsClaims); err != nil {
+		var newClaims jwt.Operator
+		if err := dec.Decode(&newClaims); err != nil {
 			return "", err
 		}
-		claims.Operator = natsClaims
+		claims.Operator = newClaims
 	}
 
 	ct, err := claims.Encode(keyPair)
@@ -423,7 +423,7 @@ func bcryptData(bs []byte) (string, error) {
 func updateNATSClaims(opt options) (s string, err error) {
 	defer func() {
 		if err != nil {
-			err = fmt.Errorf("failed to set nats claims: %w", err)
+			err = fmt.Errorf("failed to set claims: %w", err)
 		}
 	}()
 
@@ -442,7 +442,7 @@ func updateNATSClaims(opt options) (s string, err error) {
 		return "", fmt.Errorf("failed to read nkeys: %w", err)
 	}
 
-	r := bytes.NewReader(opt.natsClaims)
+	r := bytes.NewReader(opt.newClaims)
 	dec := json.NewDecoder(r)
 	dec.DisallowUnknownFields()
 
@@ -469,17 +469,23 @@ func updateNATSClaims(opt options) (s string, err error) {
 	return credsFile, nil
 }
 
-func updateNATSClaimsOperator(configToken string, oprKeys nkeys.KeyPair, d *json.Decoder) (string, error) {
+func updateNATSClaimsOperator(configToken string, oprKeys nkeys.KeyPair, d *json.Decoder) (cf string, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to update operator claims: %w", err)
+		}
+	}()
+
 	claims, err := jwt.DecodeOperatorClaims(configToken)
 	if err != nil {
 		return "", err
 	}
 
-	var natsClaims jwt.Operator
-	if err := d.Decode(&natsClaims); err != nil {
+	var newClaims jwt.Operator
+	if err := d.Decode(&newClaims); err != nil {
 		return "", err
 	}
-	claims.Operator = natsClaims
+	claims.Operator = newClaims
 
 	ct, err := claims.Encode(oprKeys)
 	if err != nil {
@@ -494,7 +500,13 @@ func updateNATSClaimsOperator(configToken string, oprKeys nkeys.KeyPair, d *json
 	return formatCredsFile(ct, seed)
 }
 
-func updateNATSClaimsAccount(configToken string, accKeys, oprKeys nkeys.KeyPair, d *json.Decoder) (string, error) {
+func updateNATSClaimsAccount(configToken string, accKeys, oprKeys nkeys.KeyPair, d *json.Decoder) (cf string, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to update account claims: %w", err)
+		}
+	}()
+
 	if oprKeys == nil {
 		return "", fmt.Errorf("missing operator issuer ncreds")
 	}
@@ -504,11 +516,11 @@ func updateNATSClaimsAccount(configToken string, accKeys, oprKeys nkeys.KeyPair,
 		return "", err
 	}
 
-	var natsClaims jwt.Account
-	if err := d.Decode(&natsClaims); err != nil {
+	var newClaims jwt.AccountClaims
+	if err := d.Decode(&newClaims); err != nil {
 		return "", err
 	}
-	claims.Account = natsClaims
+	claims.Account = newClaims.Account
 
 	ct, err := claims.Encode(oprKeys)
 	if err != nil {
@@ -523,7 +535,13 @@ func updateNATSClaimsAccount(configToken string, accKeys, oprKeys nkeys.KeyPair,
 	return formatCredsFile(ct, seed)
 }
 
-func updateNATSClaimsUser(configToken string, usrKeys, accKeys nkeys.KeyPair, d *json.Decoder) (string, error) {
+func updateNATSClaimsUser(configToken string, usrKeys, accKeys nkeys.KeyPair, d *json.Decoder) (cf string, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to update user claims: %w", err)
+		}
+	}()
+
 	if accKeys == nil {
 		return "", fmt.Errorf("missing account issuer ncreds")
 	}
@@ -533,11 +551,11 @@ func updateNATSClaimsUser(configToken string, usrKeys, accKeys nkeys.KeyPair, d 
 		return "", err
 	}
 
-	var natsClaims jwt.User
-	if err := d.Decode(&natsClaims); err != nil {
+	var newClaims jwt.User
+	if err := d.Decode(&newClaims); err != nil {
 		return "", err
 	}
-	claims.User = natsClaims
+	claims.User = newClaims
 
 	ct, err := claims.Encode(accKeys)
 	if err != nil {
