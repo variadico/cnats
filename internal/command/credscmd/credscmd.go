@@ -95,12 +95,12 @@ func runE(cmd *cobra.Command, args []string) error {
 
 		fmt.Println(s)
 	case opt.setClaims != "":
-		credsFile, err := updateNATSClaims(opt)
+		newCreds, err := updateNATSClaims(opt)
 		if err != nil {
 			return err
 		}
 
-		fmt.Print(credsFile)
+		return ioutil.WriteFile(opt.credsFile, []byte(newCreds), 0644)
 	default:
 		credsOutput, err := readCreds(opt)
 		if err != nil {
